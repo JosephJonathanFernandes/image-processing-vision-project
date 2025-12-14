@@ -3,6 +3,9 @@ import cv2
 import numpy as np
 from PIL import Image
 from skimage.morphology import thin, dilation, disk
+import io
+from datetime import datetime
+import json
 
 # Page configuration with custom theme
 st.set_page_config(
@@ -24,6 +27,18 @@ if 'comparison_mode' not in st.session_state:
     st.session_state.comparison_mode = False
 if 'show_histogram' not in st.session_state:
     st.session_state.show_histogram = False
+if 'operation_history' not in st.session_state:
+    st.session_state.operation_history = []
+if 'history_index' not in st.session_state:
+    st.session_state.history_index = -1
+if 'original_image' not in st.session_state:
+    st.session_state.original_image = None
+if 'current_operation' not in st.session_state:
+    st.session_state.current_operation = None
+if 'favorites' not in st.session_state:
+    st.session_state.favorites = []
+if 'show_help' not in st.session_state:
+    st.session_state.show_help = False
 
 # Enhanced CSS styling with animations
 st.markdown("""
@@ -229,12 +244,166 @@ st.markdown("""
     
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+    }
+    
+    .preset-card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: 2px solid #e9ecef;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 10px;
+    }
+    
+    .preset-card:hover {
+        border-color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2);
+    }
+    
+    .history-item {
+        background: #f8f9fa;
+        padding: 10px 15px;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        border-left: 3px solid #667eea;
+        font-size: 0.9rem;
+    }
+    
+    .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .shortcut-key {
+        background: #2c3e50;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        margin-left: 8px;
+    }
+    
+    .help-panel {
+        background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+        padding: 20px;
+        border-radius: 12px;
+        margin: 20px 0;
+        border: 2px solid #667eea;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# Helper functions for HCD features
+def add_to_history(operation_name, image_data, params=None):
+    """Add operation to history for undo/redo"""
+    # Remove any redo history when new operation is added
+    if st.session_state.history_index < len(st.session_state.operation_history) - 1:
+        st.session_state.operation_history = st.session_state.operation_history[:st.session_state.history_index + 1]
+    
+    st.session_state.operation_history.append({
+        'operation': operation_name,
+        'image': image_data,
+        'params': params,
+        'timestamp': datetime.now().strftime('%H:%M:%S')
+    })
+    st.session_state.history_index = len(st.session_state.operation_history) - 1
+    
+    # Limit history to 10 items
+    if len(st.session_state.operation_history) > 10:
+        st.session_state.operation_history.pop(0)
+        st.session_state.history_index -= 1
+
+def undo_operation():
+    """Undo last operation"""
+    if st.session_state.history_index > 0:
+        st.session_state.history_index -= 1
+        st.session_state.processed_image = st.session_state.operation_history[st.session_state.history_index]['image']
+        return True
+    return False
+
+def redo_operation():
+    """Redo previously undone operation"""
+    if st.session_state.history_index < len(st.session_state.operation_history) - 1:
+        st.session_state.history_index += 1
+        st.session_state.processed_image = st.session_state.operation_history[st.session_state.history_index]['image']
+        return True
+    return False
+
+def toggle_favorite(operation_name):
+    """Add/remove operation from favorites"""
+    if operation_name in st.session_state.favorites:
+        st.session_state.favorites.remove(operation_name)
+    else:
+        st.session_state.favorites.append(operation_name)
+
+# Preset filters based on common use cases
+PRESETS = {
+    "📸 Portrait Enhancement": {
+        "operations": ["Brightness +20", "Contrast +15", "Slight Blur"],
+        "description": "Soften skin and enhance facial features"
+    },
+    "🌆 Landscape Boost": {
+        "operations": ["Saturation +30", "Contrast +20", "Sharpen"],
+        "description": "Make landscapes pop with vivid colors"
+    },
+    "🎨 Vintage Film": {
+        "operations": ["Sepia", "Reduce Brightness -10", "Add Grain"],
+        "description": "Classic film photography look"
+    },
+    "✨ Social Media": {
+        "operations": ["Brightness +15", "Saturation +20", "Slight Sharpen"],
+        "description": "Perfect for Instagram and social posts"
+    },
+    "🖤 Dramatic B&W": {
+        "operations": ["Grayscale", "High Contrast", "Sharpen"],
+        "description": "Bold black and white conversion"
+    }
+}
 
 # Enhanced app header
 st.markdown('<h1 class="main-header">🖼️ Image Enhancer Pro</h1>', unsafe_allow_html=True)
 st.markdown('<p class="main-subtitle">Transform your images with professional-grade processing tools | Version 2.0</p>', unsafe_allow_html=True)
+
+# Add keyboard shortcut handler
+st.markdown("""
+<script>
+document.addEventListener('keydown', function(e) {
+    // Ctrl+Z for Undo
+    if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        document.querySelector('[data-testid="stButton"] button:contains("Undo")').click();
+    }
+    // Ctrl+Y for Redo
+    if (e.ctrlKey && e.key === 'y') {
+        e.preventDefault();
+        document.querySelector('[data-testid="stButton"] button:contains("Redo")').click();
+    }
+    // ? for Help
+    if (e.key === '?') {
+        e.preventDefault();
+        document.querySelector('[data-testid="stButton"] button:contains("Help")').click();
+    }
+});
+</script>
+""", unsafe_allow_html=True)
 
 # Enhanced sidebar
 with st.sidebar:
@@ -247,6 +416,11 @@ with st.sidebar:
     
     if uploaded_file is not None:
         st.markdown('<div class="success-message">✓ Image uploaded successfully!</div>', unsafe_allow_html=True)
+        
+        # Store original image
+        if st.session_state.original_image is None:
+            image = Image.open(uploaded_file)
+            st.session_state.original_image = np.array(image)
         
         # Display image information
         image = Image.open(uploaded_file)
@@ -287,6 +461,63 @@ with st.sidebar:
         st.image(img_np, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Quick Presets Section
+        st.markdown("---")
+        st.markdown("### 🎯 Quick Presets")
+        st.markdown("<p style='font-size: 0.85rem; color: #666; margin-bottom: 10px;'>Apply professional filters instantly</p>", unsafe_allow_html=True)
+        
+        for preset_name, preset_data in PRESETS.items():
+            with st.expander(preset_name):
+                st.markdown(f"**{preset_data['description']}**")
+                st.markdown("**Steps:**")
+                for op in preset_data['operations']:
+                    st.markdown(f"• {op}")
+                if st.button(f"Apply {preset_name}", key=f"preset_{preset_name}", use_container_width=True):
+                    st.info(f"💡 {preset_name} preset selected! Apply operations in the tabs below.")
+        
+        # Operation History and Undo/Redo
+        st.markdown("---")
+        st.markdown("### 📜 Operation History")
+        
+        col_undo, col_redo = st.columns(2)
+        with col_undo:
+            if st.button("⬅️ Undo", use_container_width=True, disabled=st.session_state.history_index <= 0, help="Undo last operation (Ctrl+Z)"):
+                if undo_operation():
+                    st.success("✓ Undone")
+                    st.rerun()
+        
+        with col_redo:
+            if st.button("➡️ Redo", use_container_width=True, disabled=st.session_state.history_index >= len(st.session_state.operation_history) - 1, help="Redo operation (Ctrl+Y)"):
+                if redo_operation():
+                    st.success("✓ Redone")
+                    st.rerun()
+        
+        # Display history
+        if st.session_state.operation_history:
+            st.markdown(f"<p style='font-size: 0.85rem; color: #666; margin: 10px 0;'>{len(st.session_state.operation_history)} operations in history</p>", unsafe_allow_html=True)
+            
+            with st.expander("View History", expanded=False):
+                for idx, item in enumerate(reversed(st.session_state.operation_history[-5:])):
+                    is_current = (len(st.session_state.operation_history) - 1 - idx) == st.session_state.history_index
+                    marker = "➡️" if is_current else "•"
+                    st.markdown(f"<div class='history-item'>{marker} <b>{item['operation']}</b><br/><small>{item['timestamp']}</small></div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<p style='font-size: 0.85rem; color: #999;'>No operations yet</p>", unsafe_allow_html=True)
+        
+        # Favorites section
+        st.markdown("---")
+        st.markdown("### ⭐ Favorite Operations")
+        if st.session_state.favorites:
+            for fav in st.session_state.favorites:
+                st.markdown(f"• {fav}")
+        else:
+            st.markdown("<p style='font-size: 0.85rem; color: #999;'>No favorites yet. Star operations to add them here!</p>", unsafe_allow_html=True)
+        
+        # Help and Keyboard Shortcuts
+        st.markdown("---")
+        if st.button("❓ Help & Shortcuts", use_container_width=True):
+            st.session_state.show_help = not st.session_state.show_help
+        
         # Options
         st.markdown("---")
         st.markdown("### ⚙️ Options")
@@ -302,6 +533,35 @@ with st.sidebar:
 
 # Main content area
 if uploaded_file is not None:
+    # Help Panel
+    if st.session_state.show_help:
+        st.markdown("""
+        <div class="help-panel">
+            <h3 style="margin-top: 0; color: #2c3e50;">⌨️ Keyboard Shortcuts & Tips</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
+                <div>
+                    <p style="margin: 5px 0;"><span class="shortcut-key">Ctrl + Z</span> Undo last operation</p>
+                    <p style="margin: 5px 0;"><span class="shortcut-key">Ctrl + Y</span> Redo operation</p>
+                    <p style="margin: 5px 0;"><span class="shortcut-key">Ctrl + S</span> Save image</p>
+                </div>
+                <div>
+                    <p style="margin: 5px 0;"><span class="shortcut-key">Ctrl + R</span> Reset all changes</p>
+                    <p style="margin: 5px 0;"><span class="shortcut-key">Tab</span> Navigate between controls</p>
+                    <p style="margin: 5px 0;"><span class="shortcut-key">?</span> Toggle this help</p>
+                </div>
+            </div>
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;">
+            <h4 style="color: #2c3e50; margin-bottom: 10px;">💡 Tips for Best Results</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #555;">
+                <li>Use presets for quick professional edits</li>
+                <li>Check comparison mode to see before/after</li>
+                <li>Star your favorite operations for quick access</li>
+                <li>Operations are saved in history - you can undo anytime</li>
+                <li>Download in PNG for lossless quality or JPG for smaller files</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    
     image = Image.open(uploaded_file)
     img_np = np.array(image)
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
@@ -323,19 +583,31 @@ if uploaded_file is not None:
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            basic_op = st.selectbox("Choose a basic operation", [
-                "Grayscale",
-                "Brightness & Contrast",
-                "Gaussian Blur",
-                "Median Blur",
-                "Bilateral Filter",
-                "Rotation",
-                "Flip",
-                "Resize",
-                "Invert Image",
-                "Sharpening",
-                "Histogram Equalization"
-            ])
+            # Add favorite button
+            col_select, col_fav = st.columns([5, 1])
+            with col_select:
+                basic_op = st.selectbox(
+                    "Choose a basic operation", 
+                    [
+                        "Grayscale",
+                        "Brightness & Contrast",
+                        "Gaussian Blur",
+                        "Median Blur",
+                        "Bilateral Filter",
+                        "Rotation",
+                        "Flip",
+                        "Resize",
+                        "Invert Image",
+                        "Sharpening",
+                        "Histogram Equalization"
+                    ],
+                    help="Select an operation to apply to your image"
+                )
+            with col_fav:
+                is_favorite = basic_op in st.session_state.favorites
+                if st.button("⭐" if is_favorite else "☆", key=f"fav_basic_{basic_op}", help="Add to favorites"):
+                    toggle_favorite(basic_op)
+                    st.rerun()
             
             # Show operation description
             operation_descriptions = {
@@ -359,14 +631,14 @@ if uploaded_file is not None:
             
             if basic_op == "Brightness & Contrast":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                alpha = st.slider("Contrast", 0.5, 3.0, 1.0)
-                beta = st.slider("Brightness", -100, 100, 0)
+                alpha = st.slider("Contrast", 0.5, 3.0, 1.0, help="1.0 = original, >1.0 = more contrast, <1.0 = less contrast")
+                beta = st.slider("Brightness", -100, 100, 0, help="0 = original, positive = brighter, negative = darker")
                 st.markdown('</div>', unsafe_allow_html=True)
                 result = cv2.convertScaleAbs(img_np, alpha=alpha, beta=beta)
                 
             elif basic_op == "Rotation":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                angle = st.slider("Rotation Angle", -180, 180, 0)
+                angle = st.slider("Rotation Angle", -180, 180, 0, help="Positive = clockwise, Negative = counter-clockwise")
                 st.markdown('</div>', unsafe_allow_html=True)
                 h, w = img_np.shape[:2]
                 M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1)
@@ -374,7 +646,7 @@ if uploaded_file is not None:
                 
             elif basic_op == "Flip":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                flip_mode = st.radio("Flip Direction", ["Horizontal", "Vertical", "Both"])
+                flip_mode = st.radio("Flip Direction", ["Horizontal", "Vertical", "Both"], help="Choose how to mirror the image")
                 st.markdown('</div>', unsafe_allow_html=True)
                 if flip_mode == "Horizontal":
                     result = cv2.flip(img_np, 1)
@@ -385,14 +657,14 @@ if uploaded_file is not None:
                     
             elif basic_op == "Resize":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                maintain_aspect = st.checkbox("Maintain aspect ratio", True)
+                maintain_aspect = st.checkbox("Maintain aspect ratio", True, help="Keep original width/height proportions")
                 if maintain_aspect:
-                    scale = st.slider("Scale factor", 0.1, 2.0, 1.0, 0.1)
+                    scale = st.slider("Scale factor", 0.1, 2.0, 1.0, 0.1, help="1.0 = original size")
                     new_width = int(img_np.shape[1] * scale)
                     new_height = int(img_np.shape[0] * scale)
                 else:
-                    new_width = st.slider("Width", 50, img_np.shape[1]*2, img_np.shape[1])
-                    new_height = st.slider("Height", 50, img_np.shape[0]*2, img_np.shape[0])
+                    new_width = st.slider("Width", 50, img_np.shape[1]*2, img_np.shape[1], help="Target width in pixels")
+                    new_height = st.slider("Height", 50, img_np.shape[0]*2, img_np.shape[0], help="Target height in pixels")
                 st.markdown('</div>', unsafe_allow_html=True)
                 result = cv2.resize(img_np, (new_width, new_height))
                 
@@ -401,13 +673,13 @@ if uploaded_file is not None:
                 
             elif basic_op == "Gaussian Blur":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                kernel_size = st.slider("Blur Amount", 1, 25, 5, step=2)
+                kernel_size = st.slider("Blur Amount", 1, 25, 5, step=2, help="Higher = more blur. Must be odd number.")
                 st.markdown('</div>', unsafe_allow_html=True)
                 result = cv2.GaussianBlur(img_np, (kernel_size, kernel_size), 0)
                 
             elif basic_op == "Median Blur":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                kernel_size = st.slider("Blur Amount", 1, 25, 5, step=2)
+                kernel_size = st.slider("Blur Amount", 1, 25, 5, step=2, help="Higher = more blur. Good for removing salt-and-pepper noise.")
                 st.markdown('</div>', unsafe_allow_html=True)
                 result = cv2.medianBlur(img_np, kernel_size)
                 
@@ -440,7 +712,24 @@ if uploaded_file is not None:
         
         with col2:
             if result is not None:
-                st.image(result, caption=f"Result: {basic_op}", use_container_width=True)
+                with st.spinner('🎨 Processing image...'):
+                    st.image(result, caption=f"Result: {basic_op}", use_container_width=True)
+                    
+                    # Action buttons with progress feedback
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("✅ Apply This Result", key=f"apply_basic_{basic_op}", use_container_width=True, help="Save this result to continue editing"):
+                            st.session_state.processed_image = result
+                            add_to_history(f"Basic: {basic_op}", result.copy(), {"operation": basic_op})
+                            st.success(f"✓ {basic_op} applied!")
+                            st.balloons()
+                    with btn_col2:
+                        if st.button("🔄 Reset to Original", key=f"reset_basic_{basic_op}", use_container_width=True, help="Discard changes and start over"):
+                            st.session_state.processed_image = None
+                            st.session_state.operation_history = []
+                            st.session_state.history_index = -1
+                            st.info("Reset to original image")
+                            st.rerun()
     
     # Tab 2: Color Transformations
     with tab2:
@@ -593,7 +882,23 @@ if uploaded_file is not None:
         
         with col2:
             if result is not None:
-                st.image(result, caption=f"Result: {color_op}", use_container_width=True)
+                with st.spinner('🎨 Processing image...'):
+                    st.image(result, caption=f"Result: {color_op}", use_container_width=True)
+                    
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("✅ Apply This Result", key=f"apply_color_{color_op}", use_container_width=True, help="Save this result to continue editing"):
+                            st.session_state.processed_image = result
+                            add_to_history(f"Color: {color_op}", result.copy(), {"operation": color_op})
+                            st.success(f"✓ {color_op} applied!")
+                            st.balloons()
+                    with btn_col2:
+                        if st.button("🔄 Reset to Original", key=f"reset_color_{color_op}", use_container_width=True, help="Discard changes and start over"):
+                            st.session_state.processed_image = None
+                            st.session_state.operation_history = []
+                            st.session_state.history_index = -1
+                            st.info("Reset to original image")
+                            st.rerun()
     
     # Tab 3: Edge Detection
     with tab3:
@@ -602,14 +907,25 @@ if uploaded_file is not None:
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            edge_op = st.selectbox("Choose an edge detection method", [
-                "Sobel Edge Detection",
-                "Manual Sobel Edge Detection",
-                "Prewitt Edge Detection",
-                "Laplacian Edge Detection",
-                "Canny Edge Detection",
-                "Overlay Edges on Original"
-            ])
+            col_select, col_fav = st.columns([5, 1])
+            with col_select:
+                edge_op = st.selectbox(
+                    "Choose an edge detection method", 
+                    [
+                        "Sobel Edge Detection",
+                        "Manual Sobel Edge Detection",
+                        "Prewitt Edge Detection",
+                        "Laplacian Edge Detection",
+                        "Canny Edge Detection",
+                        "Overlay Edges on Original"
+                    ],
+                    help="Select an edge detection algorithm"
+                )
+            with col_fav:
+                is_favorite = edge_op in st.session_state.favorites
+                if st.button("⭐" if is_favorite else "☆", key=f"fav_edge_{edge_op}", help="Add to favorites"):
+                    toggle_favorite(edge_op)
+                    st.rerun()
             
             # Show operation description
             edge_descriptions = {
@@ -696,7 +1012,23 @@ if uploaded_file is not None:
         
         with col2:
             if result is not None:
-                st.image(result, caption=f"Result: {edge_op}", use_container_width=True)
+                with st.spinner('🔍 Processing image...'):
+                    st.image(result, caption=f"Result: {edge_op}", use_container_width=True)
+                    
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("✅ Apply This Result", key=f"apply_edge_{edge_op}", use_container_width=True, help="Save this result to continue editing"):
+                            st.session_state.processed_image = result
+                            add_to_history(f"Edge: {edge_op}", result.copy(), {"operation": edge_op})
+                            st.success(f"✓ {edge_op} applied!")
+                            st.balloons()
+                    with btn_col2:
+                        if st.button("🔄 Reset to Original", key=f"reset_edge_{edge_op}", use_container_width=True, help="Discard changes and start over"):
+                            st.session_state.processed_image = None
+                            st.session_state.operation_history = []
+                            st.session_state.history_index = -1
+                            st.info("Reset to original image")
+                            st.rerun()
     
     # Tab 4: Morphological Operations
     with tab4:
@@ -838,7 +1170,23 @@ if uploaded_file is not None:
         
         with col2:
             if result is not None:
-                st.image(result, caption=f"Result: {morph_op}", use_container_width=True)
+                with st.spinner('📐 Processing image...'):
+                    st.image(result, caption=f"Result: {morph_op}", use_container_width=True)
+                    
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("✅ Apply This Result", key=f"apply_morph_{morph_op}", use_container_width=True, help="Save this result to continue editing"):
+                            st.session_state.processed_image = result
+                            add_to_history(f"Morph: {morph_op}", result.copy(), {"operation": morph_op})
+                            st.success(f"✓ {morph_op} applied!")
+                            st.balloons()
+                    with btn_col2:
+                        if st.button("🔄 Reset to Original", key=f"reset_morph_{morph_op}", use_container_width=True, help="Discard changes and start over"):
+                            st.session_state.processed_image = None
+                            st.session_state.operation_history = []
+                            st.session_state.history_index = -1
+                            st.info("Reset to original image")
+                            st.rerun()
     
     # Tab 5: Special Effects
     with tab5:
@@ -847,18 +1195,29 @@ if uploaded_file is not None:
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            effect_op = st.selectbox("Choose a special effect", [
-                "Sepia Tone",
-                "Pencil Sketch",
-                "Cartoon Effect",
-                "Emboss Effect",
-                "Vintage Effect",
-                "Vignette Effect",
-                "Watercolor Effect",
-                "Oil Painting Effect",
-                "Pixelate",
-                "Posterize"
-            ])
+            col_select, col_fav = st.columns([5, 1])
+            with col_select:
+                effect_op = st.selectbox(
+                    "Choose a special effect", 
+                    [
+                        "Sepia Tone",
+                        "Pencil Sketch",
+                        "Cartoon Effect",
+                        "Emboss Effect",
+                        "Vintage Effect",
+                        "Vignette Effect",
+                        "Watercolor Effect",
+                        "Oil Painting Effect",
+                        "Pixelate",
+                        "Posterize"
+                    ],
+                    help="Select a special effect to apply"
+                )
+            with col_fav:
+                is_favorite = effect_op in st.session_state.favorites
+                if st.button("⭐" if is_favorite else "☆", key=f"fav_effect_{effect_op}", help="Add to favorites"):
+                    toggle_favorite(effect_op)
+                    st.rerun()
             
             # Show operation description
             effect_descriptions = {
@@ -1057,7 +1416,23 @@ if uploaded_file is not None:
         
         with col2:
             if result is not None:
-                st.image(result, caption=f"Result: {effect_op}", use_container_width=True)
+                with st.spinner('✨ Processing image...'):
+                    st.image(result, caption=f"Result: {effect_op}", use_container_width=True)
+                    
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("✅ Apply This Result", key=f"apply_effect_{effect_op}", use_container_width=True, help="Save this result to continue editing"):
+                            st.session_state.processed_image = result
+                            add_to_history(f"Effect: {effect_op}", result.copy(), {"operation": effect_op})
+                            st.success(f"✓ {effect_op} applied!")
+                            st.balloons()
+                    with btn_col2:
+                        if st.button("🔄 Reset to Original", key=f"reset_effect_{effect_op}", use_container_width=True, help="Discard changes and start over"):
+                            st.session_state.processed_image = None
+                            st.session_state.operation_history = []
+                            st.session_state.history_index = -1
+                            st.info("Reset to original image")
+                            st.rerun()
 
 # Add a download button for the processed image
 if 'result' in locals() and result is not None:
