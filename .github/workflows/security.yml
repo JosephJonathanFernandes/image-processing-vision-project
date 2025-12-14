@@ -1,0 +1,47 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly security scans
+    - cron: '0 0 * * 0'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Full history for better analysis
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Run Safety - Dependency Vulnerability Scan
+      run: |
+        safety check --json || true
+    
+    - name: Run Bandit - Security Linter
+      run: |
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . -f screen
+    
+    - name: Upload Security Reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json

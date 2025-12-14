@@ -1,0 +1,22 @@
+# Image Processing Vision Project - Python Requirements
+
+# Web Framework
+streamlit>=1.30.0
+
+# Image Processing
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+Pillow>=10.1.0
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Image Processing Utilities
+scikit-image>=0.21.0
+
+# Visualization
+matplotlib>=3.8.0
+
+# Additional utilities
+python-dateutil>=2.8.2

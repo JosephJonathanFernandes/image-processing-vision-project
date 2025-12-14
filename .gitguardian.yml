@@ -1,0 +1,24 @@
+# GitGuardian Configuration
+# This file configures secret scanning and security policies
+
+# Paths to exclude from scanning
+paths-ignore:
+  - "**/*.md"
+  - "**/*.txt"
+  - "**/tests/**"
+  - "**/.git/**"
+
+# Specific files to exclude
+exclude:
+  - .env.example
+  - requirements.txt
+  - LICENSE
+
+# Minimum occurrence to trigger detection (reduce false positives)
+minimum-occurrences: 1
+
+# Enable verbose output
+verbose: false
+
+# Exit code on policy breaks
+exit-zero: false
