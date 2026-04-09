@@ -337,6 +337,10 @@ def undo_operation():
         st.session_state.history_index -= 1
         st.session_state.processed_image = st.session_state.operation_history[st.session_state.history_index]['image']
         return True
+    elif st.session_state.history_index == 0:
+        st.session_state.history_index -= 1
+        st.session_state.processed_image = None
+        return True
     return False
 
 def redo_operation():
@@ -377,6 +381,43 @@ PRESETS = {
         "description": "Bold black and white conversion"
     }
 }
+
+def apply_preset_logic(img, preset_name):
+    # Ensure correct shape and copy
+    result = img.copy()
+    if len(result.shape) == 2:
+        result = cv2.cvtColor(result, cv2.COLOR_GRAY2RGB)
+    
+    if preset_name == "📸 Portrait Enhancement":
+        result = cv2.convertScaleAbs(result, alpha=1.15, beta=20)
+        result = cv2.GaussianBlur(result, (3, 3), 0)
+    elif preset_name == "🌆 Landscape Boost":
+        hsv = cv2.cvtColor(result, cv2.COLOR_RGB2HSV)
+        hsv[:,:,1] = cv2.add(hsv[:,:,1], 30)
+        result = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+        result = cv2.convertScaleAbs(result, alpha=1.2, beta=0)
+        kernel_sharp = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+        result = cv2.filter2D(result, -1, kernel_sharp)
+    elif preset_name == "🎨 Vintage Film":
+        kernel_sepia = np.array([[0.272, 0.534, 0.131],
+                                 [0.349, 0.686, 0.168],
+                                 [0.393, 0.769, 0.189]])
+        result = cv2.transform(result, kernel_sepia)
+        result = cv2.convertScaleAbs(result, alpha=1.0, beta=-10)
+    elif preset_name == "✨ Social Media":
+        result = cv2.convertScaleAbs(result, alpha=1.0, beta=15)
+        hsv = cv2.cvtColor(result, cv2.COLOR_RGB2HSV)
+        hsv[:,:,1] = cv2.add(hsv[:,:,1], 20)
+        result = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+        kernel_sharp = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+        result = cv2.filter2D(result, -1, kernel_sharp)
+    elif preset_name == "🖤 Dramatic B&W":
+        result = cv2.cvtColor(result, cv2.COLOR_RGB2GRAY)
+        result = cv2.cvtColor(result, cv2.COLOR_GRAY2RGB)
+        result = cv2.convertScaleAbs(result, alpha=1.5, beta=0)
+        kernel_sharp = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+        result = cv2.filter2D(result, -1, kernel_sharp)
+    return result
 
 # Enhanced app header
 st.markdown('<h1 class="main-header">🖼️ Image Enhancer Pro</h1>', unsafe_allow_html=True)
@@ -424,7 +465,10 @@ with st.sidebar:
 
         # Display image information
         image = Image.open(uploaded_file)
-        img_np = np.array(image)
+        if st.session_state.processed_image is not None:
+            img_np = st.session_state.processed_image
+        else:
+            img_np = np.array(image)
 
         st.markdown("### 📊 Image Information")
 
@@ -458,7 +502,7 @@ with st.sidebar:
         # Preview
         st.markdown("### 👁️ Preview")
         st.markdown('<div class="image-container">', unsafe_allow_html=True)
-        st.image(img_np, use_container_width=True)
+        st.image(img_np, width="stretch")
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Quick Presets Section
@@ -472,8 +516,12 @@ with st.sidebar:
                 st.markdown("**Steps:**")
                 for op in preset_data['operations']:
                     st.markdown(f"• {op}")
-                if st.button(f"Apply {preset_name}", key=f"preset_{preset_name}", use_container_width=True):
-                    st.info(f"💡 {preset_name} preset selected! Apply operations in the tabs below.")
+                if st.button(f"Apply {preset_name}", key=f"preset_{preset_name}", width="stretch"):
+                    processed_img = apply_preset_logic(img_np, preset_name)
+                    st.session_state.processed_image = processed_img
+                    add_to_history(f"Preset: {preset_name}", processed_img.copy(), {"operation": preset_name})
+                    st.success(f"✓ {preset_name} applied successfully!")
+                    st.rerun()
 
         # Operation History and Undo/Redo
         st.markdown("---")
@@ -481,13 +529,13 @@ with st.sidebar:
 
         col_undo, col_redo = st.columns(2)
         with col_undo:
-            if st.button("⬅️ Undo", use_container_width=True, disabled=st.session_state.history_index <= 0, help="Undo last operation (Ctrl+Z)"):
+            if st.button("⬅️ Undo", width="stretch", disabled=st.session_state.history_index < 0, help="Undo last operation (Ctrl+Z)"):
                 if undo_operation():
                     st.success("✓ Undone")
                     st.rerun()
 
         with col_redo:
-            if st.button("➡️ Redo", use_container_width=True, disabled=st.session_state.history_index >= len(st.session_state.operation_history) - 1, help="Redo operation (Ctrl+Y)"):
+            if st.button("➡️ Redo", width="stretch", disabled=st.session_state.history_index >= len(st.session_state.operation_history) - 1, help="Redo operation (Ctrl+Y)"):
                 if redo_operation():
                     st.success("✓ Redone")
                     st.rerun()
@@ -515,7 +563,7 @@ with st.sidebar:
 
         # Help and Keyboard Shortcuts
         st.markdown("---")
-        if st.button("❓ Help & Shortcuts", use_container_width=True):
+        if st.button("❓ Help & Shortcuts", width="stretch"):
             st.session_state.show_help = not st.session_state.show_help
 
         # Options
@@ -527,7 +575,7 @@ with st.sidebar:
             help="Display original and processed images side-by-side"
         )
 
-        if st.button("🔄 Reset All", use_container_width=True):
+        if st.button("🔄 Reset All", width="stretch"):
             st.session_state.processed_image = None
             st.rerun()
 
@@ -563,8 +611,29 @@ if uploaded_file is not None:
         """, unsafe_allow_html=True)
 
     image = Image.open(uploaded_file)
-    img_np = np.array(image)
-    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    original_img_np = np.array(image)
+    
+    if st.session_state.processed_image is not None:
+        img_np = st.session_state.processed_image
+    else:
+        img_np = original_img_np
+        
+    # Show comparison mode before the tabs if activated
+    if st.session_state.comparison_mode and st.session_state.processed_image is not None:
+        st.markdown('<h3 class="sub-header">🔍 Comparison View</h3>', unsafe_allow_html=True)
+        comp_col1, comp_col2 = st.columns(2)
+        with comp_col1:
+            st.markdown('**Original Image**')
+            st.image(original_img_np, width="stretch")
+        with comp_col2:
+            st.markdown('**Processed Image**')
+            st.image(img_np, width="stretch")
+        st.markdown('---')
+
+    if len(img_np.shape) == 2:
+        gray = img_np
+    else:
+        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     kernel = np.ones((3, 3), np.uint8)
 
     # Create tabs for different categories of operations
@@ -713,18 +782,18 @@ if uploaded_file is not None:
         with col2:
             if result is not None:
                 with st.spinner('🎨 Processing image...'):
-                    st.image(result, caption=f"Result: {basic_op}", use_container_width=True)
+                    st.image(result, caption=f"Result: {basic_op}", width="stretch")
 
                     # Action buttons with progress feedback
                     btn_col1, btn_col2 = st.columns(2)
                     with btn_col1:
-                        if st.button("✅ Apply This Result", key=f"apply_basic_{basic_op}", use_container_width=True, help="Save this result to continue editing"):
+                        if st.button("✅ Apply This Result", key=f"apply_basic_{basic_op}", width="stretch", help="Save this result to continue editing"):
                             st.session_state.processed_image = result
                             add_to_history(f"Basic: {basic_op}", result.copy(), {"operation": basic_op})
                             st.success(f"✓ {basic_op} applied!")
                             st.balloons()
                     with btn_col2:
-                        if st.button("🔄 Reset to Original", key=f"reset_basic_{basic_op}", use_container_width=True, help="Discard changes and start over"):
+                        if st.button("🔄 Reset to Original", key=f"reset_basic_{basic_op}", width="stretch", help="Discard changes and start over"):
                             st.session_state.processed_image = None
                             st.session_state.operation_history = []
                             st.session_state.history_index = -1
@@ -883,17 +952,17 @@ if uploaded_file is not None:
         with col2:
             if result is not None:
                 with st.spinner('🎨 Processing image...'):
-                    st.image(result, caption=f"Result: {color_op}", use_container_width=True)
+                    st.image(result, caption=f"Result: {color_op}", width="stretch")
 
                     btn_col1, btn_col2 = st.columns(2)
                     with btn_col1:
-                        if st.button("✅ Apply This Result", key=f"apply_color_{color_op}", use_container_width=True, help="Save this result to continue editing"):
+                        if st.button("✅ Apply This Result", key=f"apply_color_{color_op}", width="stretch", help="Save this result to continue editing"):
                             st.session_state.processed_image = result
                             add_to_history(f"Color: {color_op}", result.copy(), {"operation": color_op})
                             st.success(f"✓ {color_op} applied!")
                             st.balloons()
                     with btn_col2:
-                        if st.button("🔄 Reset to Original", key=f"reset_color_{color_op}", use_container_width=True, help="Discard changes and start over"):
+                        if st.button("🔄 Reset to Original", key=f"reset_color_{color_op}", width="stretch", help="Discard changes and start over"):
                             st.session_state.processed_image = None
                             st.session_state.operation_history = []
                             st.session_state.history_index = -1
@@ -1013,17 +1082,17 @@ if uploaded_file is not None:
         with col2:
             if result is not None:
                 with st.spinner('🔍 Processing image...'):
-                    st.image(result, caption=f"Result: {edge_op}", use_container_width=True)
+                    st.image(result, caption=f"Result: {edge_op}", width="stretch")
 
                     btn_col1, btn_col2 = st.columns(2)
                     with btn_col1:
-                        if st.button("✅ Apply This Result", key=f"apply_edge_{edge_op}", use_container_width=True, help="Save this result to continue editing"):
+                        if st.button("✅ Apply This Result", key=f"apply_edge_{edge_op}", width="stretch", help="Save this result to continue editing"):
                             st.session_state.processed_image = result
                             add_to_history(f"Edge: {edge_op}", result.copy(), {"operation": edge_op})
                             st.success(f"✓ {edge_op} applied!")
                             st.balloons()
                     with btn_col2:
-                        if st.button("🔄 Reset to Original", key=f"reset_edge_{edge_op}", use_container_width=True, help="Discard changes and start over"):
+                        if st.button("🔄 Reset to Original", key=f"reset_edge_{edge_op}", width="stretch", help="Discard changes and start over"):
                             st.session_state.processed_image = None
                             st.session_state.operation_history = []
                             st.session_state.history_index = -1
@@ -1171,17 +1240,17 @@ if uploaded_file is not None:
         with col2:
             if result is not None:
                 with st.spinner('📐 Processing image...'):
-                    st.image(result, caption=f"Result: {morph_op}", use_container_width=True)
+                    st.image(result, caption=f"Result: {morph_op}", width="stretch")
 
                     btn_col1, btn_col2 = st.columns(2)
                     with btn_col1:
-                        if st.button("✅ Apply This Result", key=f"apply_morph_{morph_op}", use_container_width=True, help="Save this result to continue editing"):
+                        if st.button("✅ Apply This Result", key=f"apply_morph_{morph_op}", width="stretch", help="Save this result to continue editing"):
                             st.session_state.processed_image = result
                             add_to_history(f"Morph: {morph_op}", result.copy(), {"operation": morph_op})
                             st.success(f"✓ {morph_op} applied!")
                             st.balloons()
                     with btn_col2:
-                        if st.button("🔄 Reset to Original", key=f"reset_morph_{morph_op}", use_container_width=True, help="Discard changes and start over"):
+                        if st.button("🔄 Reset to Original", key=f"reset_morph_{morph_op}", width="stretch", help="Discard changes and start over"):
                             st.session_state.processed_image = None
                             st.session_state.operation_history = []
                             st.session_state.history_index = -1
@@ -1417,17 +1486,17 @@ if uploaded_file is not None:
         with col2:
             if result is not None:
                 with st.spinner('✨ Processing image...'):
-                    st.image(result, caption=f"Result: {effect_op}", use_container_width=True)
+                    st.image(result, caption=f"Result: {effect_op}", width="stretch")
 
                     btn_col1, btn_col2 = st.columns(2)
                     with btn_col1:
-                        if st.button("✅ Apply This Result", key=f"apply_effect_{effect_op}", use_container_width=True, help="Save this result to continue editing"):
+                        if st.button("✅ Apply This Result", key=f"apply_effect_{effect_op}", width="stretch", help="Save this result to continue editing"):
                             st.session_state.processed_image = result
                             add_to_history(f"Effect: {effect_op}", result.copy(), {"operation": effect_op})
                             st.success(f"✓ {effect_op} applied!")
                             st.balloons()
                     with btn_col2:
-                        if st.button("🔄 Reset to Original", key=f"reset_effect_{effect_op}", use_container_width=True, help="Discard changes and start over"):
+                        if st.button("🔄 Reset to Original", key=f"reset_effect_{effect_op}", width="stretch", help="Discard changes and start over"):
                             st.session_state.processed_image = None
                             st.session_state.operation_history = []
                             st.session_state.history_index = -1
@@ -1459,7 +1528,7 @@ if 'result' in locals() and result is not None:
             data=buf_png.getvalue(),
             file_name=f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
             mime="image/png",
-            use_container_width=True
+            width="stretch"
         )
 
     with col2:
@@ -1474,11 +1543,11 @@ if 'result' in locals() and result is not None:
             data=buf_jpg.getvalue(),
             file_name=f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
             mime="image/jpeg",
-            use_container_width=True
+            width="stretch"
         )
 
     with col3:
-        if st.button("🗑️ Clear Result", use_container_width=True):
+        if st.button("🗑️ Clear Result", width="stretch"):
             st.session_state.processed_image = None
             st.rerun()
 else:
