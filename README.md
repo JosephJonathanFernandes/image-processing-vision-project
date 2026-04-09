@@ -12,6 +12,12 @@ This project provides an intuitive interface for applying advanced image process
 
 ## ✨ Features
 
+### Core Application Features
+- **Sequential Multi-Effect Processing**: Build complex effects by chaining OpenCV algorithms. Each effect stacks seamlessly onto the last.
+- **Robust Undo / Redo Tracking**: Cycle backwards and forwards through your detailed operation history, all the way back to your original unedited image.
+- **Automated Magic Presets**: One-click professional filters (e.g., Portrait Enhancement, Vintage Film) dynamically execute chained algorithms on your image instantly.
+- **Interactive Comparison Engine**: Select "Show Comparison View" to natively display your original and newly processed components running side-by-side.
+
 ### Image Enhancement
 - Brightness and contrast adjustment
 - Image sharpening
@@ -62,7 +68,7 @@ This project provides an intuitive interface for applying advanced image process
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/image-processing-vision-project.git
+   git clone https://github.com/JosephJonathanFernandes/image-processing-vision-project.git
    cd image-processing-vision-project
    ```
 
@@ -105,10 +111,11 @@ For a complete list, see [requirements.txt](requirements.txt)
 ## 🎯 Usage
 
 1. **Upload an Image**: Use the sidebar to upload JPG, JPEG, or PNG files
-2. **Choose Operation**: Select from categorized tabs (Basic, Color, Edge Detection, etc.)
-3. **Adjust Parameters**: Fine-tune settings using interactive sliders and controls
-4. **View Results**: See real-time preview of processed images
-5. **Compare**: View original and processed images side-by-side
+2. **Apply Quick Presets (Optional)**: Automatically apply chained effects with a single click in the Quick Presets accordion
+3. **Choose Operation**: Select from categorized tabs (Basic Operations, Color Transformations, Edge Detection, Morphological Operations, Special Effects)
+4. **Adjust Parameters**: Fine-tune specific algorithm settings using interactive dials/sliders
+5. **Stack your Effects**: Click "✅ Apply This Result" to lock in the effect and stack a new algorithm on top
+6. **Compare**: View original and processed images side-by-side using the Comparison checkbox
 
 ## 📂 Project Structure
 
