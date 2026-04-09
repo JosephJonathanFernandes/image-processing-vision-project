@@ -838,27 +838,35 @@ if uploaded_file is not None:
 
             # Parameters for operations
             result = None
+            
+            # Ensure we have a 3-channel RGB image for color transformations
+            if len(img_np.shape) == 2:
+                color_img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2RGB)
+            elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                color_img_np = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB)
+            else:
+                color_img_np = img_np.copy()
 
             if color_op == "RGB to HSV":
-                result = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
+                result = cv2.cvtColor(color_img_np, cv2.COLOR_RGB2HSV)
 
             elif color_op == "HSV to RGB":
-                hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
+                hsv = cv2.cvtColor(color_img_np, cv2.COLOR_RGB2HSV)
                 result = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
 
             elif color_op == "RGB to LAB":
-                result = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
+                result = cv2.cvtColor(color_img_np, cv2.COLOR_RGB2LAB)
 
             elif color_op == "LAB to RGB":
-                lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
+                lab = cv2.cvtColor(color_img_np, cv2.COLOR_RGB2LAB)
                 result = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
 
             elif color_op == "RGB to YCrCb":
-                result = cv2.cvtColor(img_np, cv2.COLOR_RGB2YCrCb)
+                result = cv2.cvtColor(color_img_np, cv2.COLOR_RGB2YCrCb)
 
             elif color_op == "Color Mask (HSV)":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
+                hsv = cv2.cvtColor(color_img_np, cv2.COLOR_RGB2HSV)
 
                 # Create two columns for the HSV sliders
                 hue_col, satval_col = st.columns(2)
@@ -885,11 +893,11 @@ if uploaded_file is not None:
                 if show_mask:
                     result = mask
                 else:
-                    result = cv2.bitwise_and(img_np, img_np, mask=mask)
+                    result = cv2.bitwise_and(color_img_np, color_img_np, mask=mask)
 
             elif color_op == "Color Balance":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
-                b, g, r = cv2.split(cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
+                b, g, r = cv2.split(cv2.cvtColor(color_img_np, cv2.COLOR_RGB2BGR))
 
                 r_gain = st.slider("Red Channel", 0.0, 2.0, 1.0, 0.1)
                 g_gain = st.slider("Green Channel", 0.0, 2.0, 1.0, 0.1)
@@ -908,7 +916,7 @@ if uploaded_file is not None:
                 channel = st.radio("Select Channel", ["Red", "Green", "Blue", "All"])
                 st.markdown('</div>', unsafe_allow_html=True)
 
-                r, g, b = cv2.split(cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
+                r, g, b = cv2.split(cv2.cvtColor(color_img_np, cv2.COLOR_RGB2BGR))
 
                 if channel == "Red":
                     result = cv2.cvtColor(cv2.merge([np.zeros_like(b), np.zeros_like(g), r]), cv2.COLOR_BGR2RGB)
@@ -917,7 +925,7 @@ if uploaded_file is not None:
                 elif channel == "Blue":
                     result = cv2.cvtColor(cv2.merge([b, np.zeros_like(g), np.zeros_like(r)]), cv2.COLOR_BGR2RGB)
                 else:
-                    result = img_np
+                    result = color_img_np
 
             elif color_op == "Thresholding":
                 st.markdown('<div class="parameter-section">', unsafe_allow_html=True)
